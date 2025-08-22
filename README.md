@@ -52,7 +52,7 @@ The datasets used in this paper can be downloaded from the following websites. S
 
 (1) The  spatial multimodal analysis (SMA) protocol dataset https://data.mendeley.com/datasets/w7nw4km7xd/1
 
-(2) https://drive.google.com/drive/folders/1DT5NJrNumVVC8o43LmMNTPB5Klxl7lyz
+(2) MSI of the mouse hemisphere https://drive.google.com/drive/folders/1DT5NJrNumVVC8o43LmMNTPB5Klxl7lyz
 
 
 ## Contact

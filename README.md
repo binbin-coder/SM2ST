@@ -24,16 +24,20 @@ pip install sm2st
 
 ## Tutorial
 ### Benchmark Testing
+```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/Normal_Resolution_SM2ST_masked_pearsonr_30o_rec.ipynb```  
+
+### Integrate spatial multi-omics
 ```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/rectification20t2.ipynb```  
 ```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/rectification21t2.ipynb```  
-```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/rectification22t2.ipynb```  
-### Integrate spatial multi-omics
-```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/Multi_omics_Cluster.ipynb```  
+```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/rectification22t2.ipynb```   
+
 ### manual rectification
 ```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/manual_rectification.ipynb```  
 ```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/Multi_omics_Cluster.ipynb```  
+
 ### Multi-omics clustering
 ```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/Muliti_omics_SpatialGlue_tutorial_smst.ipynb```  
+
 ### super resolution
 ```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/super_Resolution_STMGraph_30rex.ipynb```   
 

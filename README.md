@@ -1,4 +1,4 @@
-# ST2ST
+# SM2ST
 
 ## Overview
  ![Image text](https://github.com/binbin-coder/SM2ST/blob/main/overview.png)

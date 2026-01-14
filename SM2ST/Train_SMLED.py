@@ -84,7 +84,7 @@ def gradient_penalty(discriminator, real_data, fake_data, device, lambda_gp=10):
     return gradient_penalty
 
 
-def train_SMLED(adata=None, X_dim = 2, delta = 1.0, train_epoch=15000,lr=0.0001,mask_ratio=0.5,alpha=1.0,key_added='SMLED',step_size=10000,gamma=1.0,
+def train_SMLED(adata=None,X_dim = 2,delta = 1.0,train_epoch=15000,lr=0.0001,mask_ratio=0.5,alpha=1.0,key_added='SMLED',step_size=10000,gamma=1.0,
                 relu=True, gradient_clipping=5., experiment='generation', weight_decay=0.0001, verbose=True, batch_size = 1000,lambda_gp = 1.0,
                 random_seed=2025, save_path = './SMLED_pyG_result',down_ratio = 0., coord_sf=1.0, 
                 WMMSE=0.0, res = 2.0, device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')):
@@ -197,7 +197,7 @@ def train_SMLED(adata=None, X_dim = 2, delta = 1.0, train_epoch=15000,lr=0.0001,
         loss2 = torch.nn.MSELoss()
         loss1 = torch.nn.L1Loss()
     MAE = torch.nn.L1Loss()
-    with tqdm(range(train_epoch), total=train_epoch, desc='Epochs', ncols=0) as epoch:
+    with tqdm(range(train_epoch), total=train_epoch, desc='Epochs') as epoch:
         for j in epoch:
             train_reloss = []
             train_GAloss = []
@@ -287,7 +287,7 @@ def train_SMLED(adata=None, X_dim = 2, delta = 1.0, train_epoch=15000,lr=0.0001,
                     dec_sche.step()
                 encoder.eval()
                 decoder.eval()
-                
+            
             #, loss_GB: %.5f , loss_DB: %.5f 
             epoch_info = 'loss_re: %.5f, loss_lat: %.5f, loss_GA: %.5f, loss: %.5f, loss_DA: %.5f' % \
                          (torch.mean(torch.FloatTensor(train_reloss)),

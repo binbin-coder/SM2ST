@@ -13,3 +13,4 @@ from .Train_SMLED import train_SMLED
 from .utils import Transfer_pytorch_Data, Batch_Data, Cal_Spatial_Net, Stats_Spatial_Net, mclust_R, positional_pixel_step, masked_anndata, generation_coord, recovery_coord, ms2anndata
 from .rectification import *
 from .dataset import *
+from .annotation import *

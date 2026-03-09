@@ -258,8 +258,8 @@ def positional_pixel_step(coords, full_coor, delta, coord_sf):
     skew_step_y = min(np.min(coords_c[:,1]), np.min(full_coor_c[:,1]))
     print(skew_step_x,skew_step_y)
     print("pixel_step:", pixel_step) #, "skew_step:", skew_step
-    # int_result = int(pixel_step)  # 截断为整数
-    # float_result = float(int_result)  # 转换为浮点数
+    # int_result = int(pixel_step)  # trans int
+    # float_result = float(int_result)  # trans float
     coords_c[:,0] = (coords_c[:,0]-skew_step_x+pixel_step)/pixel_step
     coords_c[:,1] = (coords_c[:,1]-skew_step_y+pixel_step)/pixel_step
     full_coor_c[:,0] = (full_coor_c[:,0]-skew_step_x+pixel_step)/pixel_step
@@ -271,7 +271,7 @@ def positional_pixel_step(coords, full_coor, delta, coord_sf):
 
 def masked_anndata(adata = None, mask_ratio=0.5):
     total_numbers = adata.X.shape[0]
-    numbers_to_pick = int(total_numbers * 0.5)
+    numbers_to_pick = int(total_numbers * mask_ratio)
     # Generates a list from 0 to total_numbers
     number_list = list(range(total_numbers))
     # Random selection using the sample function
@@ -385,7 +385,7 @@ def setToArray(
 def recovery_coord(
         adata,
         name='spatial',
-        mask_ratio=0.5,
+        keep_ratio=0.5,
 ):
     """ This function generates spatial location for Spatial Transcriptomics data.
         Args:
@@ -401,7 +401,7 @@ def recovery_coord(
     coor_df = pd.DataFrame(adata.obsm[name])
     coor_df.index = adata.obs.index
     coor_df.columns = ["x", "y"]
-    sample_index=np.random.choice(range(coor_df.shape[0]), size=round(mask_ratio*coor_df.shape[0]), replace=False)
+    sample_index=np.random.choice(range(coor_df.shape[0]), size=round(keep_ratio*coor_df.shape[0]), replace=False)
     sample_index = setToArray(set(sample_index))
     sample_coor_df = coor_df.iloc[sample_index]
     sample_barcode = coor_df.index[sample_index]

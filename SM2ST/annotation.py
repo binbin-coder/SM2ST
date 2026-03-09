@@ -6,6 +6,7 @@ from pathlib import Path
 MODULE_PATH = Path(__file__).parent
 import scanpy as sc
 from anndata import AnnData
+from typing import List
 
 class AnnDataSM(AnnData):
     """
@@ -226,3 +227,63 @@ def metabolite_annotation(
         adata_SM.var['class'] = var_df['class'].values
         adata_SM.var['sub_class'] = var_df['sub_class'].values
     return var_df
+
+def calculate_metabolite_enrichment(
+    metabolite_list: List[str],
+    cutoff: float = 0.05,
+    type: str = "sub_class"
+) -> pd.DataFrame:
+    """
+    Calculate the metabolite enrichment.
+    
+    :param metabolite_list: List[str]. The list of metabolites.
+    :param cutoff: float. The cutoff, default is 0.05.
+    :param type: str. The type, default is "sub_class".
+    
+    :return: pd.DataFrame. The metabolite enrichment results.
+    """
+    KEGG_df = pd.read_csv(MODULE_PATH / "../data/hmdb.csv", index_col=0)
+    enrichment_results = []
+    classes = KEGG_df['class'].unique()
+    subclasses = KEGG_df['sub_class'].unique()
+    
+    if type == "sub_class":
+        for cls in subclasses:
+            metabolites_in_class = KEGG_df[KEGG_df['sub_class'] == cls]['accession']
+            metabolites_in_class_set = set(metabolites_in_class)
+            metabolites_in_class_set_overlap = set(metabolites_in_class_set.intersection(metabolite_list))
+            k = len(metabolites_in_class_set.intersection(metabolite_list))
+            K = len(metabolites_in_class_set)
+            N = len(set(KEGG_df['accession']))
+            n = len(metabolite_list)
+            p_value = hypergeom.sf(k - 1, N, K, n)
+            enrichment_results.append({
+                'class': cls,
+                'p_value': p_value,
+                'overlap': k,
+                'total_class_metabolites': K,
+                'metaoblites_in_class': metabolites_in_class_set_overlap,
+            })
+            
+    if type == "class":
+         for cls in classes:
+            metabolites_in_class = KEGG_df[KEGG_df['class'] == cls]['accession']
+            metabolites_in_class_set = set(metabolites_in_class)
+            metabolites_in_class_set_overlap = metabolites_in_class_set.intersection(metabolite_list)
+            k = len(metabolites_in_class_set.intersection(metabolite_list))
+            K = len(metabolites_in_class_set)
+            N = len(set(KEGG_df['accession']))
+            n = len(metabolite_list)
+            p_value = hypergeom.sf(k - 1, N, K, n)
+            enrichment_results.append({
+                'class': cls,
+                'p_value': p_value,
+                'overlap': k,
+                'total_class_metabolites': K,
+                'metaoblites_in_class': metabolites_in_class_set_overlap,
+            })
+
+    enrichment_results_df = pd.DataFrame(enrichment_results)
+    enrichment_results_cutoff_df = enrichment_results_df[enrichment_results_df['p_value'] < cutoff]
+            
+    return enrichment_results_cutoff_df

@@ -3,7 +3,7 @@ import pandas as pd
 from tqdm import tqdm
 import scipy.sparse as sp
 import os
-from .SMLED import Encoder, Decoder, Discriminator_A,Discriminator_B
+from .SMLED import Encoder, Decoder, Discriminator_A
 from .utils import Transfer_pytorch_Data, positional_pixel_step, recovery_coord, generation_coord, Cal_Spatial_Net
 from .dataset import *
 import random
@@ -42,27 +42,6 @@ class WeightedMAELoss(torch.nn.Module):
         # Ensure that the shape of the weights is consistent with that of the input tensor
         return torch.mean(self.weights * torch.abs(y_pred - y_true))
 
-
-def rand_projections(
-        embedding_dim,
-        num_samples=50,
-        device='cpu'
-):
-    """This function generates `num_samples` random samples from the latent space's unit sphere.
-
-        Args:
-            embedding_dim (int): embedding dimensionality
-            num_samples (int): number of random projection samples
-
-        Return:
-            torch.Tensor: tensor of size (num_samples, embedding_dim)
-    """
-    projections = [w / np.sqrt((w**2).sum())  # L2 normalization
-                   for w in np.random.normal(size=(num_samples, embedding_dim))]
-    projections = np.asarray(projections)
-    return torch.from_numpy(projections).type(torch.FloatTensor).to(device)
-
-
 def wasserstein_loss(disc_real, disc_fake):
     return -torch.mean(disc_real) + torch.mean(disc_fake)
 
@@ -84,9 +63,13 @@ def gradient_penalty(discriminator, real_data, fake_data, device, lambda_gp=10):
     return gradient_penalty
 
 
-def train_SMLED(adata=None,X_dim = 2,delta = 1.0,train_epoch=15000,lr=0.0001,mask_ratio=0.5,alpha=1.0,key_added='SMLED',step_size=10000,gamma=1.0,
-                relu=True, gradient_clipping=5., experiment='generation', weight_decay=0.0001, verbose=True, batch_size = 1000,lambda_gp = 1.0,
-                random_seed=2025, save_path = './SMLED_pyG_result',down_ratio = 0., coord_sf=1.0, 
+def mix_labels_torch(fake_label, real_label, alpha=0.5):
+    new_label = alpha * fake_label + (1 - alpha) * real_label
+    return new_label
+
+def train_SMLED(adata=None,X_dim = 2,delta = 1.0,train_epoch=10000,lr=0.0001,keep_ratio=0.5,alpha=1.0,key_added='SMLED',step_size=10000,gamma=1.0,
+                relu=False, gradient_clipping=5., experiment='generation', weight_decay=0.0001, verbose=True, batch_size = 1000, epsilon = 1.0,
+                random_seed=2025, save_path = './SMLED_pyG_result',down_ratio = 0., coord_sf=1.0, mix_labels = False,
                 WMMSE=0.0, res = 2.0, device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')):
     """\
     Training GAN auto-encoder.
@@ -129,7 +112,7 @@ def train_SMLED(adata=None,X_dim = 2,delta = 1.0,train_epoch=15000,lr=0.0001,mas
 
     if experiment=='recovery':
         # adata, masked_adata, adata_filtered, picked_index, remaining_index = masked_anndata(adata = adata, mask_ratio=0.5)
-        coor, full_coor, sample_index, sample_barcode = recovery_coord(adata,name='spatial',mask_ratio = mask_ratio)
+        coor, full_coor, sample_index, sample_barcode = recovery_coord(adata,name='spatial',keep_ratio = keep_ratio)
         used_gene, normed_data, adata_sample = get_data(adata, experiment=experiment, sample_index=sample_index, sample_barcode=sample_barcode)
         xlabel_df,full_xlabel_df = positional_pixel_step(coor, full_coor, delta, coord_sf)
         print(xlabel_df,full_xlabel_df)
@@ -166,17 +149,13 @@ def train_SMLED(adata=None,X_dim = 2,delta = 1.0,train_epoch=15000,lr=0.0001,mas
     dec_optim = torch.optim.Adam(decoder.parameters(), lr=lr, weight_decay=weight_decay, eps=1e-8, betas=(0.5, 0.999))
 
     disc_optim_AB = torch.optim.Adam(discriminator_AB.parameters(), lr=lr, weight_decay=weight_decay, eps=1e-8, betas=(0.5, 0.999))
-    # enc_optim_gan = torch.optim.Adam(encoder.parameters(), lr=lr, weight_decay=weight_decay, eps=1e-8, betas=(0.5, 0.999)) #
-    # dec_optim_gan = torch.optim.Adam(decoder.parameters(), lr=lr, weight_decay=weight_decay, eps=1e-8, betas=(0.5, 0.999))
 
     n_gen = 1
-    n_crit = 2
+    n_crit = 1 #2#
     # disc_optim_BA = torch.optim.Adam(discriminator_BA.parameters(), lr=lr, weight_decay=weight_decay, eps=1e-8, betas=(0.5, 0.999))
     enc_sche = torch.optim.lr_scheduler.StepLR(enc_optim, step_size=n_gen*step_size, gamma=gamma)
     dec_sche = torch.optim.lr_scheduler.StepLR(dec_optim, step_size=n_gen*step_size, gamma=gamma)
     disc_sche_AB = torch.optim.lr_scheduler.StepLR(disc_optim_AB, step_size=n_crit*step_size, gamma=gamma)
-    # enc_sche_gan = torch.optim.lr_scheduler.StepLR(enc_optim_gan, step_size=step_size, gamma=gamma)
-    # dec_sche_gan = torch.optim.lr_scheduler.StepLR(dec_optim_gan, step_size=step_size, gamma=gamma)
     # loss function
     criterion = torch.nn.BCELoss()
     
@@ -186,10 +165,15 @@ def train_SMLED(adata=None,X_dim = 2,delta = 1.0,train_epoch=15000,lr=0.0001,mas
             matrix = adata.X.A
         else:
             matrix = adata.X
-        column_sums = matrix.sum(axis=0)
-        normalized = column_sums * (WMMSE / column_sums.sum())
-        weights = WMMSE - normalized
-        
+        mean_expr = matrix.mean(axis=0)
+        # log_mean = np.log1p(mean_expr)
+        # weights = 1.0 / (log_mean + epsilon)
+        weights = 1.0 / (mean_expr + epsilon)
+        # normalization
+        weights = weights / weights.sum() * len(weights)
+        # column_sums = matrix.sum(axis=0)
+        # normalized = column_sums * (WMMSE / column_sums.sum())
+        # weights = WMMSE - normalized
         weights = torch.tensor(weights, dtype=torch.float32,device = device)
         loss2 = WeightedMSELoss(weights)
         loss1 = WeightedMAELoss(weights)
@@ -197,7 +181,7 @@ def train_SMLED(adata=None,X_dim = 2,delta = 1.0,train_epoch=15000,lr=0.0001,mas
         loss2 = torch.nn.MSELoss()
         loss1 = torch.nn.L1Loss()
     MAE = torch.nn.L1Loss()
-    with tqdm(range(train_epoch), total=train_epoch, desc='Epochs') as epoch:
+    with tqdm(range(train_epoch), total=train_epoch, desc='Epochs', ncols=0) as epoch:
         for j in epoch:
             train_reloss = []
             train_GAloss = []
@@ -211,10 +195,11 @@ def train_SMLED(adata=None,X_dim = 2,delta = 1.0,train_epoch=15000,lr=0.0001,mas
                 xlabel = xlabel.to(torch.float32)
                 xdata, xlabel = Variable(xdata.to(device)), Variable(xlabel.to(device))
                 
-                for _ in range(n_crit): #3
+                for _ in range(n_crit):
                     discriminator_AB.train()
                     disc_optim_AB.zero_grad()
-                    fake_xlabel = encoder(xdata, relu)
+                    # fake_xlabel = encoder(xdata)
+                    fake_xlabel = encoder(xdata, relu=True)
                     # fake_xdata = decoder(fake_xlabel, relu)
                     # fake_xdata = decoder(fake_xlabel, relu)
                     # combined_xlabel = torch.cat((xdata, xlabel), dim=1)
@@ -223,9 +208,6 @@ def train_SMLED(adata=None,X_dim = 2,delta = 1.0,train_epoch=15000,lr=0.0001,mas
                     # disc_fakeA = discriminator_AB(combined_fake_xlabel)
                     disc_realA = discriminator_AB(xlabel)
                     disc_fakeA = discriminator_AB(fake_xlabel)
-                    # d_loss = wasserstein_loss(disc_realA, disc_fakeA)
-                    # gp = gradient_penalty(discriminator_AB, xlabel, fake_xlabel, device, lambda_gp = lambda_gp)
-                    # d_total_loss = d_loss + gp
                     disc_real = disc_realA.view(-1)
                     disc_fake = disc_fakeA.view(-1)
                     loss_dis_real = criterion(disc_real, torch.ones_like(disc_real))
@@ -244,33 +226,20 @@ def train_SMLED(adata=None,X_dim = 2,delta = 1.0,train_epoch=15000,lr=0.0001,mas
                     decoder.train()
                     enc_optim.zero_grad()
                     dec_optim.zero_grad()
-                    fake_xlabel = encoder(xdata, relu)
+                    # fake_xlabel = encoder(xdata, relu)
+                    fake_xlabel = encoder(xdata, relu=True)
+                    if mix_labels:
+                        fake_xlabel = mix_labels_torch(fake_xlabel, xlabel, alpha=0.5)
                     fake_xdata = decoder(fake_xlabel, relu)
-                    # fake_xdata_ = decoder(xlabel, relu)
-                    # disc_fakeA = discriminator_AB(fake_xlabel)
-                    # disc_fake = disc_fakeA.view(-1)
-                    # gA_loss = criterion(disc_fake, torch.ones_like(disc_fake))
-                    # combined_xlabel = torch.cat((xdata, xlabel), dim=1)
-                    # combined_fake_xlabel = torch.cat((fake_xdata, fake_xlabel), dim=1)
-                    # disc_realA = discriminator_AB(combined_xlabel)
-                    # disc_fakeA = discriminator_AB(combined_fake_xlabel)
                     disc_realA = discriminator_AB(xlabel)
                     disc_fakeA = discriminator_AB(fake_xlabel)
                     # gA_loss = -wasserstein_loss(disc_realA, disc_fakeA)
                     gA_loss = torch.abs(wasserstein_loss(disc_realA, disc_fakeA))
-                    # gA_loss = torch.abs(wasserstein_loss(disc_realA, disc_fakeA))
-                    # gp = gradient_penalty(discriminator_AB, xlabel, fake_xlabel, device, lambda_gp = lambda_gp)
-                    # d_total_loss = gA_loss + gp
-                    # disc_fakeB = discriminator_BA(fake_xdata)
-                    # gA_loss = -disc_fakeA.mean()
-                    # gB_loss = -disc_fakeB.mean()
-                    
                     latent_loss = MAE(fake_xlabel, xlabel)
-                    # + 0.1 * sliced_wasserstein_distance(fake_xlabel, xlabel, 1000, device=device)
                     recon_loss = loss2(fake_xdata, xdata) + 0.1*loss1(fake_xdata, xdata)
                     
+                    # loss = recon_loss + 0.1*latent_loss + gA_loss  #
                     loss = recon_loss + 0.3*latent_loss + gA_loss  #
-                    # loss = 0.4*recon_loss + 0.6*latent_loss + gA_loss # last best
                     train_latloss.append(latent_loss.item())
                     train_GAloss.append(gA_loss.item())
                     # train_GBloss.append(gB_loss.item())
@@ -314,7 +283,7 @@ def train_SMLED(adata=None,X_dim = 2,delta = 1.0,train_epoch=15000,lr=0.0001,mas
         full_coor_t = full_coor_t.to(torch.float32)
         full_coor_t = Variable(full_coor_t.to(device))
         # if experiment=='higher_res':
-        dataloader_t = DataLoader(full_coor_t, batch_size=1000, shuffle=False)
+        dataloader_t = DataLoader(full_coor_t, batch_size=batch_size, shuffle=False)
         generate_profile_list = []
         for batch_coor_t in dataloader_t:
             batch_coor_t = batch_coor_t.to(torch.float32)

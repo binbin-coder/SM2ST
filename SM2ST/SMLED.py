@@ -74,47 +74,6 @@ class random_remask(torch.nn.Module):
         return out_rep, remask_nodes, rekeep_nodes
 
 
-# class Encoder(nn.Module):
-#     def __init__(self, mz_number, X_dim):
-#         super(Encoder, self).__init__()
-#         # self.encoding_mask_noise = encoding_mask_noise(hidden_dims)
-#         # self.random_remask = random_remask(hidden_dims)
-#         self.fc1 = nn.Linear(mz_number, 1024)
-#         self.fc1_bn = nn.BatchNorm1d(1024)
-#         self.fc2 = nn.Linear(1024, 256)
-#         self.fc2_bn = nn.BatchNorm1d(256)
-#         self.fc3 = nn.Linear(256, 64)
-#         self.fc3_bn = nn.BatchNorm1d(64)
-#         self.fc4 = nn.Linear(64, 8)
-#         self.fc4_bn = nn.BatchNorm1d(8)
-#         self.fc5 = nn.Linear(8, X_dim)
-#         # Initialize parameters
-#         self.init_weights()
-
-#     def init_weights(self):
-#         gain = nn.init.calculate_gain('relu')
-#         # Initialize weights and biases for all linear layers
-#         for module in self.modules():
-#             if isinstance(module, nn.Linear):
-#                 # Use the Xavier initialization method to specify the gain value
-#                 nn.init.xavier_uniform_(module.weight, gain=gain)
-#                 if module.bias is not None:
-#                     # Initialize the bias to 0
-#                     nn.init.zeros_(module.bias)
-    
-#     def forward(self, features, relu=False, mask = 0.0):
-#         if mask:
-#             mask_tensor = torch.bernoulli(torch.full_like(features, mask)).to(features.device)  # Random mask with 50% probability
-#             features = features * mask_tensor  # Apply mask
-#         h1 = F.relu(self.fc1_bn(self.fc1(features)))
-#         h2 = F.relu(self.fc2_bn(self.fc2(h1)))
-#         h3 = F.relu(self.fc3_bn(self.fc3(h2)))
-#         h4 = F.relu(self.fc4_bn(self.fc4(h3)))
-#         if relu:
-#             return F.relu(self.fc5(h4))
-#         else:
-#             return self.fc5(h4)
-
 class Encoder(nn.Module):
     def __init__(self, mz_number, X_dim, down_ratio):
         super(Encoder, self).__init__()
@@ -172,42 +131,6 @@ class Encoder(nn.Module):
         else:
             return self.fc5(h4)
 
-
-# class Decoder(nn.Module):
-#     def __init__(self, mz_number, X_dim):
-#         super(Decoder, self).__init__()
-#         self.fc6 = nn.Linear(X_dim, 8)
-#         self.fc6_bn = nn.BatchNorm1d(8)
-#         self.fc7 = nn.Linear(8, 64)
-#         self.fc7_bn = nn.BatchNorm1d(64)
-#         self.fc8 = nn.Linear(64, 256)
-#         self.fc8_bn = nn.BatchNorm1d(256)
-#         self.fc9 = nn.Linear(256, 1024)
-#         self.fc9_bn = nn.BatchNorm1d(1024)
-#         self.fc10 = nn.Linear(1024, mz_number)
-#         # Initialize parameters
-#         self.init_weights()
-
-#     def init_weights(self):
-#         # Initialize weights and biases for all linear layers
-#         gain = nn.init.calculate_gain('relu')
-#         for module in self.modules():
-#             if isinstance(module, nn.Linear):
-#                 # Use the Xavier initialization method to specify the gain value
-#                 nn.init.xavier_uniform_(module.weight, gain=gain)  
-#                 if module.bias is not None:
-#                     # Initialize the bias to 0
-#                     nn.init.zeros_(module.bias)
-    
-#     def forward(self, z, relu=False):
-#         h6 = F.relu(self.fc6_bn(self.fc6(z)))
-#         h7 = F.relu(self.fc7_bn(self.fc7(h6)))
-#         h8 = F.relu(self.fc8_bn(self.fc8(h7)))
-#         h9 = F.relu(self.fc9_bn(self.fc9(h8)))
-#         if relu:
-#             return F.relu(self.fc10(h9))
-#         else:
-#             return self.fc10(h9)
 
 class Decoder(nn.Module):
     def __init__(self, mz_number, X_dim, down_ratio):
@@ -268,9 +191,10 @@ class Discriminator_A(torch.nn.Module):
     def __init__(self, X_dim):
         super(Discriminator_A, self).__init__()
         self.fc = torch.nn.Sequential(
-            spectral_norm(nn.Linear(X_dim, 128)),# last best
-            nn.LeakyReLU(0.2),
-            spectral_norm(nn.Linear(128, 32)),
+            # spectral_norm(nn.Linear(X_dim, 128)),# last best
+            # nn.LeakyReLU(0.2),
+            # spectral_norm(nn.Linear(128, 32)),
+            spectral_norm(nn.Linear(X_dim, 32)),# last best
             nn.LeakyReLU(0.2),
             spectral_norm(nn.Linear(32, 8)),
             nn.LeakyReLU(0.2),
@@ -281,39 +205,6 @@ class Discriminator_A(torch.nn.Module):
             # nn.Linear(64, 8),
             # nn.LeakyReLU(0.2),
             # nn.Linear(8, 1),
-            # nn.Sigmoid()
-        )
-        self.init_weights()
-
-    def init_weights(self):
-        gain = nn.init.calculate_gain('leaky_relu', 0.2)
-        # Initialize weights and biases for all linear layers
-        for module in self.modules():
-            if isinstance(module, nn.Linear):
-                # Use the Xavier initialization method to specify the gain value
-                nn.init.xavier_uniform_(module.weight, gain=gain)
-                if module.bias is not None:
-                    # Initialize the bias to 0
-                    nn.init.zeros_(module.bias)
-    def forward(self, x):
-        return self.fc(x)
-
-class Discriminator_B(torch.nn.Module):
-    def __init__(self, X_dim):
-        super(Discriminator_B, self).__init__()
-        self.fc = torch.nn.Sequential(
-            nn.Linear(X_dim, 512),
-            nn.LeakyReLU(0.2),
-            nn.Linear(512, 128),
-            nn.LeakyReLU(0.2),
-            nn.Linear(128, 32),
-            nn.LeakyReLU(0.2),
-            nn.Linear(32, 1),
-            # nn.Linear(X_dim, 16),
-            # nn.LeakyReLU(0.2),
-            # nn.Linear(16, 4),
-            # nn.LeakyReLU(0.2),
-            # nn.Linear(4, 1),
             # nn.Sigmoid()
         )
         self.init_weights()

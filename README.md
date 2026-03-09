@@ -27,11 +27,13 @@ pip install sm2st
 
 ### Benchmark Testing
 ```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/Normal_Resolution_SM2ST_masked_pearsonr_30o_rec.ipynb```  
+```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/Normal_Resolution_SM2ST_masked_pearsonr_30o_rec_STAGE.ipynb```  
+```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/Normal_Resolution_SM2ST_masked_pearsonr_30_rec_mask_03.ipynb```  
 
 ### Integrate spatial multi-omics
-```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/rectification20t2.ipynb```  
-```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/rectification21t2.ipynb```  
-```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/rectification22t2.ipynb```   
+```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/rectification31t2_SM2ST_test.ipynb```  
+```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/rectification31t2_STAGE_test.ipynb```  
+```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/rectification41t2_SM2ST_test.ipynb```   
 
 ### manual rectification
 ```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/manual_rectification.ipynb```  
@@ -41,7 +43,7 @@ pip install sm2st
 ```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/Muliti_omics_SpatialGlue_tutorial_smst.ipynb```  
 
 ### super resolution
-```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/super_Resolution_STMGraph_30rex.ipynb```   
+```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/super_Resolution_STMGraph_pyG1_30rex.ipynb```   
 
 
 ## Reference the software tutorial

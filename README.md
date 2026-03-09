@@ -23,6 +23,8 @@ conda env create -f environment.yaml
 pip install sm2st
 
 ## Tutorial
+```https://sm2st-tutorial.readthedocs.io/en/latest/``` 
+
 ### Benchmark Testing
 ```https://github.com/binbin-coder/SM2ST/blob/main/Tutorial/Normal_Resolution_SM2ST_masked_pearsonr_30o_rec.ipynb```  
 

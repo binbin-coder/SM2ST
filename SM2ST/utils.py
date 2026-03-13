@@ -445,3 +445,276 @@ def ms2anndata(ms_org,ms_sp,HE_path,in_tissue=True):
         'spot_diameter_fullres': 377.5302262467417
     }
     return ms_adata
+
+import numpy as np
+import anndata as ad
+from skimage.metrics import structural_similarity as ssim
+from scipy import sparse
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def adata_to_feature_images(adata, spatial_key='spatial', image_shape=None):
+    """
+    Convert each feature in an AnnData object into a 2D spatial image.
+    FIX: Ensures all arrays passed to np.add.at are standard numpy arrays, not AnnData Views.
+    """
+    # 1. Retrieve spatial coordinates
+    if spatial_key not in adata.obsm:
+        raise KeyError(f"Spatial key '{spatial_key}' not found in adata.obsm")
+    
+    spatial_coords = adata.obsm[spatial_key].copy()
+    
+    # Ensure coordinates are integers
+    if not np.issubdtype(spatial_coords.dtype, np.integer):
+        spatial_coords = np.round(spatial_coords).astype(int)
+    
+    x_coords = spatial_coords[:, 0]
+    y_coords = spatial_coords[:, 1]
+    
+    # 2. Determine image dimensions
+    if image_shape is None:
+        max_x, max_y = x_coords.max(), y_coords.max()
+        image_shape = (int(max_y) + 1, int(max_x) + 1)
+    
+    height, width = image_shape
+    
+    # Filter out points outside the image boundaries
+    valid_mask = (x_coords >= 0) & (x_coords < width) & (y_coords >= 0) & (y_coords < height)
+    x_valid = x_coords[valid_mask]
+    y_valid = y_coords[valid_mask]
+    
+    # Access the expression matrix
+    X = adata.X
+    is_sparse = sparse.issparse(X)
+    
+    n_features = adata.n_vars
+    feature_names = adata.var_names
+    
+    print(f"Generating {n_features} feature images (shape: {image_shape})...")
+    
+    feature_images = {}
+    
+    for i, fname in enumerate(feature_names):
+        # Create fresh zero arrays (these are standard numpy arrays, safe to use)
+        img_sum = np.zeros(image_shape, dtype=np.float64)
+        img_count = np.zeros(image_shape, dtype=np.int32)
+        
+        # Extract expression values for the current feature
+        if is_sparse:
+            col_data = X[valid_mask, i]
+            # .toarray() returns a standard numpy array, but let's be explicit with .flatten()
+            vals = col_data.toarray().flatten() if sparse.issparse(col_data) else np.asarray(col_data).flatten()
+        else:
+            # CRITICAL FIX HERE: 
+            # When slicing adata[:, gene], X might be an AnnData View.
+            # We must convert it to a standard numpy array explicitly.
+            raw_vals = X[valid_mask, i]
+            vals = np.asarray(raw_vals).flatten()
+        
+        # Flatten 2D coordinates to 1D indices
+        flat_indices = y_valid * width + x_valid
+        
+        # CRITICAL FIX HERE:
+        # img_sum is already a standard numpy array created by np.zeros, so img_sum.ravel() 
+        # should be fine. However, to be absolutely safe against any upstream weirdness,
+        # we ensure the target buffer is a standard numpy array.
+        target_buffer = np.asarray(img_sum).ravel()
+        count_buffer = np.asarray(img_count).ravel()
+        
+        # Now np.add.at will work because target_buffer is a pure numpy array
+        np.add.at(target_buffer, flat_indices, vals)
+        np.add.at(count_buffer, flat_indices, 1)
+        
+        # Calculate mean
+        with np.errstate(divide='ignore', invalid='ignore'):
+            img_final = img_sum / img_count
+            img_final[np.isnan(img_final)] = 0.0
+            
+        feature_images[fname] = img_final.astype(np.float32)
+        
+        if (i + 1) % 500 == 0:
+            print(f"  Processed {i+1}/{n_features} features...")
+            
+    return feature_images
+    
+
+def calculate_spatial_feature_ssim(adata1, adata2, spatial_key='spatial', 
+                                   image_shape=None, win_size=7):
+    """
+    Calculate SSIM for each feature between two spatial datasets.
+    """
+    # 1. 检查共同特征
+    common_features = np.intersect1d(adata1.var_names, adata2.var_names)
+    if len(common_features) == 0:
+        raise ValueError("No common features found between the two datasets.")
+    
+    # 2. 检查坐标一致性 (可选，但推荐)
+    # 注意：这里只检查前几个点或形状，完全比较可能很慢
+    if adata1.obsm[spatial_key].shape != adata2.obsm[spatial_key].shape:
+        print("⚠️ Warning: Spatial coordinate shapes differ.")
+    else:
+        # 简单采样检查
+        if not np.array_equal(adata1.obsm[spatial_key][:10], adata2.obsm[spatial_key][:10]):
+            print("⚠️ Warning: Spatial coordinates seem inconsistent. Results may be unreliable.")
+
+    # 3. 自动推断图像大小 (如果未提供)
+    if image_shape is None:
+        coords = np.vstack([adata1.obsm[spatial_key], adata2.obsm[spatial_key]])
+        max_x, max_y = coords[:, 0].max(), coords[:, 1].max()
+        image_shape = (int(max_y) + 1, int(max_x) + 1)
+        print(f"Auto-determined image shape: {image_shape}")
+
+    # 4. 生成图像
+    print("Generating images for dataset 1...")
+    images1 = adata_to_feature_images(adata1, spatial_key, image_shape)
+    
+    print("Generating images for dataset 2...")
+    images2 = adata_to_feature_images(adata2, spatial_key, image_shape)
+    
+    # 5. 计算 SSIM
+    ssim_scores = {}
+    print(f"Calculating SSIM for {len(common_features)} features...")
+    
+    # 调整 win_size 必须是奇数且小于图像最小维度
+    min_dim = min(image_shape)
+    if win_size >= min_dim:
+        win_size = min_dim - 1 if (min_dim - 1) % 2 == 1 else min_dim - 2
+        print(f"⚠️ Adjusted win_size to {win_size} to fit image dimensions.")
+    if win_size % 2 == 0:
+        win_size += 1
+
+    for idx, feature in enumerate(common_features):
+        img1 = images1[feature]
+        img2 = images2[feature]
+        
+        # 动态计算 data_range
+        # skimage 要求 data_range 是浮点数，通常是图像的最大可能值或实际最大值
+        max_val = max(img1.max(), img2.max())
+        min_val = min(img1.min(), img2.min())
+        data_range = max_val - min_val
+        
+        if data_range == 0:
+            # 如果两幅图都是常数且相同，SSIM 定义为 1
+            ssim_scores[feature] = 1.0
+            continue
+        
+        try:
+            # 关键修复：
+            # 1. 使用 data_range 参数
+            # 2. 使用 win_size 参数 (skimage >= 0.19)
+            # 3. multichannel=False (或 channel_axis=None 在新版中不需要显式设为None，默认就是灰度)
+            # 4. full=False 确保只返回 score 标量
+            score = ssim(
+                img1, img2,
+                data_range=data_range,
+                win_size=win_size,
+                full=False,
+                channel_axis=None # 显式指定无通道轴，兼容新版 skimage
+            )
+            ssim_scores[feature] = float(score)
+            
+        except Exception as e:
+            print(f"Error calculating SSIM for {feature}: {e}")
+            ssim_scores[feature] = np.nan
+        
+        if (idx + 1) % 100 == 0:
+            print(f"  Finished {idx + 1}/{len(common_features)} features")
+    
+    valid_scores = [v for v in ssim_scores.values() if not np.isnan(v)]
+    avg_ssim = np.mean(valid_scores) if valid_scores else 0.0
+    print(f"Finished! Average SSIM: {avg_ssim:.4f}")
+    
+    return ssim_scores
+
+def visualize_feature_spatial(adata1, adata2, feature_name, spatial_key='spatial', 
+                              image_shape=None, ssim_scores=None):
+    """
+    Visualize spatial distribution and differences.
+    """
+    # 如果 image_shape 未提供，尝试从数据推断
+    if image_shape is None:
+        coords = adata1.obsm[spatial_key]
+        max_x, max_y = coords[:, 0].max(), coords[:, 1].max()
+        image_shape = (int(max_y) + 1, int(max_x) + 1)
+
+    images1 = adata_to_feature_images(adata1, spatial_key, image_shape)
+    images2 = adata_to_feature_images(adata2, spatial_key, image_shape)
+    
+    if feature_name not in images1 or feature_name not in images2:
+        raise ValueError(f"Feature {feature_name} not found in generated images.")
+
+    img1 = images1[feature_name]
+    img2 = images2[feature_name]
+    diff = img1 - img2
+    
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    
+    # Plot 1
+    im1 = axes[0].imshow(img1, cmap='magma')
+    axes[0].set_title(f'Dataset 1: {feature_name}')
+    axes[0].axis('off')
+    plt.colorbar(im1, ax=axes[0], fraction=0.046, pad=0.04)
+    
+    # Plot 2
+    im2 = axes[1].imshow(img2, cmap='magma')
+    axes[1].set_title(f'Dataset 2: {feature_name}')
+    axes[1].axis('off')
+    plt.colorbar(im2, ax=axes[1], fraction=0.046, pad=0.04)
+    
+    # Plot 3 (Difference)
+    ssim_val = ssim_scores.get(feature_name, np.nan) if ssim_scores else np.nan
+    title_diff = f'Difference\n(SSIM: {ssim_val:.4f})' if not np.isnan(ssim_val) else 'Difference\n(SSIM: N/A)'
+    
+    im3 = axes[2].imshow(diff, cmap='RdBu_r')
+    axes[2].set_title(title_diff)
+    axes[2].axis('off')
+    plt.colorbar(im3, ax=axes[2], fraction=0.046, pad=0.04)
+    
+    plt.tight_layout()
+    plt.show()
+
+import scipy
+def calculate_median_rmse(adata_1, adata_2):
+    rmse_values = []
+    if scipy.sparse.issparse(adata_1.X):
+        A = adata_1.X.A
+    else:
+        A = adata_1.X
+    if scipy.sparse.issparse(adata_2.X):
+        B = adata_2.X.A
+    else:
+        B = adata_2.X
+    for row_a, row_b in zip(A, B):
+        mse = np.mean((row_a - row_b) ** 2)
+        rmse = np.sqrt(mse)
+        rmse_values.append(rmse)
+    median_rmse = np.median(rmse_values)
+    print(f"Median RMSE across all rows: {median_rmse}")
+    
+    mean_rmse = np.mean(rmse_values)
+    print(f"Mean RMSE across all rows: {mean_rmse}")
+    return rmse_values
+
+import scipy
+from scipy.stats import pearsonr
+def calculate_median_pearsonr(adata_1, adata_2):
+    if scipy.sparse.issparse(adata_1.X):
+        A = adata_1.X.A
+    else:
+        A = adata_1.X
+    if scipy.sparse.issparse(adata_2.X):
+        B = adata_2.X.A
+    else:
+        B = adata_2.X
+    r_values = []
+    p_values = []
+    for col1, col2 in zip(A, B):
+        r_value, p_value = pearsonr(col1, col2)
+        r_values.append(r_value)
+        p_values.append(p_value)
+    median_r = np.median(r_values)
+    print(f"Median r across all rows: {median_r}")
+    
+    mean_r = np.mean(r_values)
+    print(f"Mean r across all rows: {mean_r}")
+    return r_values,p_values
